@@ -1,0 +1,48 @@
+<nav class="bg-gray-800 text-white p-4 flex justify-between items-center shadow-md">
+
+  <h1 class="font-bold text-xl text-blue-400">
+    <a href="/">ServEase</a>
+  </h1>
+
+  <div class="space-x-6 flex items-center">
+
+    <a href="/" class="hover:text-blue-400 transition">
+      Home
+    </a>
+
+    <a href="/services" class="hover:text-blue-400 transition">
+      Services
+    </a>
+
+    <% if (!user) { %>
+      <a href="/login" class="hover:text-blue-400 transition">
+        Login
+      </a>
+      <a href="/signup" class="bg-blue-600 px-4 py-2 rounded hover:bg-blue-500">
+        Signup
+      </a>
+    <% } else { %>
+      <span class="text-gray-300">
+        <%= user.email %>
+      </span>
+
+      <% if (user.role === "admin") { %>
+        <a href="/admin" class="text-yellow-400">
+          Admin
+        </a>
+      <% } %>
+
+      <% if (user.role === "provider") { %>
+        <a href="/provider-dashboard">
+          Dashboard
+        </a>
+      <% } %>
+
+      <a href="/logout"
+         class="bg-red-600 px-4 py-2 rounded hover:bg-red-500">
+        Logout
+      </a>
+    <% } %>
+
+  </div>
+</nav>

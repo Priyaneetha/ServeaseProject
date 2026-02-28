@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Login - ServiceConnect</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes fade {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade {
+      animation: fade 0.8s ease-out;
+    }
+  </style>
+</head>
+
+<body class="bg-gray-950 text-white min-h-screen flex items-center justify-center animate-fade">
+
+  
+  <div class="w-full max-w-5xl grid md:grid-cols-2 bg-gray-900 rounded-2xl shadow-2xl overflow-hidden border border-gray-800">
+
+    <!-- LEFT SIDE -->
+    <div class="hidden md:flex flex-col justify-center p-12 bg-gradient-to-br from-blue-700 to-blue-500">
+
+      <h1 class="text-4xl font-extrabold mb-6">
+        ServEase
+      </h1>
+
+      <p class="text-blue-100 text-lg leading-relaxed">
+        Discover trusted local professionals instantly.
+        Secure. Fast. Reliable.
+      </p>
+
+    </div>
+
+    <!-- RIGHT SIDE -->
+    <div class="p-10">
+
+      <h2 class="text-3xl font-bold mb-2">Welcome Back</h2>
+      <p class="text-gray-400 mb-8">
+        Login to continue to your dashboard
+      </p>
+
+      <!-- show backend error if present -->
+      <% if (typeof error !== 'undefined' && error) { %>
+      <div class="text-red-400 mb-4"><%= error %></div>
+      <% } %>
+      <!-- IMPORTANT: method + action added -->
+      <form method="POST" action="/login" class="space-y-5">
+      
+      <script>
+        // remove query string after displaying error so refreshing doesn't repeat
+        if (window.location.search.includes('error=')) {
+          const u = new URL(window.location);
+          u.searchParams.delete('error');
+          history.replaceState(null, '', u);
+        }
+      </script>
+
+        <div>
+          <label class="block text-sm mb-2 text-gray-400">Email</label>
+          <input 
+            type="email"
+            name="email"
+            required
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+        </div>
+
+        <div>
+          <label class="block text-sm mb-2 text-gray-400">Password</label>
+          <input 
+            type="password"
+            name="password"
+            required
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+        </div>
+
+        <button 
+          type="submit"
+          class="w-full bg-blue-600 hover:bg-blue-500 transition rounded-lg py-3 font-semibold"
+        >
+          Login
+        </button>
+
+      </form>
+
+      <div class="mt-6 text-sm text-gray-400">
+        Don't have an account?
+        <a href="/signup" class="text-blue-400 hover:underline">Sign up</a>
+      </div>
+
+    </div>
+
+  </div>
+
+</body>
+</html>

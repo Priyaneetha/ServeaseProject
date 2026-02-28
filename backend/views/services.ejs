@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Services</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white p-10">
+
+<!-- NAVBAR -->
+<%- include("partials/navbar", { user: user }) %>
+
+
+<h2 class="text-3xl font-bold mb-6">Find Providers</h2>
+
+<!-- SEARCH + FILTER FORM -->
+<form method="GET" action="/services" 
+      class="bg-gray-800 p-6 rounded-lg mb-10 grid md:grid-cols-3 gap-4">
+
+  <input 
+    type="text"
+    name="search"
+    value="<%= typeof search !== 'undefined' ? search : '' %>"
+    placeholder="Search by service (Electrician, Plumber...)"
+    class="p-3 rounded bg-gray-700 border border-gray-600"
+  >
+
+  <input 
+    type="text"
+    name="location"
+    value="<%= typeof location !== 'undefined' ? location : '' %>"
+    placeholder="Filter by location (Calicut, Kochi...)"
+    class="p-3 rounded bg-gray-700 border border-gray-600"
+  >
+
+  <button 
+    type="submit"
+    class="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded font-semibold">
+    Search
+  </button>
+
+</form>
+
+
+<!-- PROVIDERS LIST -->
+<div class="grid md:grid-cols-2 gap-6">
+
+  <% if (providers.length === 0) { %>
+    <p class="text-gray-400">No providers found.</p>
+  <% } %>
+
+  <% providers.forEach(provider => { %>
+    <div class="bg-gray-800 p-6 rounded border border-gray-700">
+      <h3 class="text-xl font-bold text-blue-400 mb-2">
+        <%= provider.name %>
+      </h3>
+      <p><strong>Service:</strong> <%= provider.service %></p>
+      <p><strong>Location:</strong> <%= provider.location %></p>
+      <p><strong>Phone:</strong> <%= provider.phone %></p>
+      <p class="mt-2 text-gray-400">
+        <%= provider.description %>
+      </p>
+    </div>
+  <% }) %>
+
+</div>
+
+</body>
+</html>
