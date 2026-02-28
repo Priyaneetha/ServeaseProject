@@ -1,6 +1,8 @@
+require("dotenv").config();
+
 const express = require("express");
-const mysql = require("mysql2");
 const session = require("express-session");
+const { Pool } = require("pg");
 
 const app = express();
 
@@ -12,7 +14,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 app.use(session({
-  secret: "supersecretkey",
+  secret: process.env.SESSION_SECRET || "supersecretkey",
   resave: false,
   saveUninitialized: false
 }));
@@ -23,49 +25,47 @@ app.use(express.static("public"));
 
 
 // ==========================
-// DATABASE CONNECTION
+// DATABASE CONNECTION (NEON)
 // ==========================
 
-const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "student",
-  database: "serviceconnect"
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
 });
 
-db.connect(err => {
-  if (err) {
-    console.error("MySQL Connection Error:", err.message);
-  } else {
-    console.log("MySQL Connected");
+pool.connect()
+  .then(() => console.log("Connected to Neon DB"))
+  .catch(err => console.error("Neon Connection Error:", err.message));
 
-    const userTable = `
-      CREATE TABLE IF NOT EXISTS users (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        role ENUM('user','provider','admin') DEFAULT 'user'
-      ) ENGINE=InnoDB
-    `;
 
-    const providerTable = `
-      CREATE TABLE IF NOT EXISTS providers (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(255),
-        service VARCHAR(255),
-        location VARCHAR(255),
-        phone VARCHAR(50),
-        description TEXT,
-        owner_id INT,
-        status ENUM('pending','approved') DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      ) ENGINE=InnoDB
-    `;
+// ==========================
+// CREATE TABLES
+// ==========================
 
-    db.query(userTable);
-    db.query(providerTable);
-  }
-});
+(async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password VARCHAR(255) NOT NULL,
+      role VARCHAR(20) DEFAULT 'user'
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS providers (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255),
+      service VARCHAR(255),
+      location VARCHAR(255),
+      phone VARCHAR(50),
+      description TEXT,
+      owner_id INT,
+      status VARCHAR(20) DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+})();
 
 
 // ==========================
@@ -107,20 +107,22 @@ app.get("/signup", (req, res) => {
   res.render("signup");
 });
 
-app.post("/register", (req, res) => {
+app.post("/register", async (req, res) => {
   const { email, password, role } = req.body;
 
   if (!email || !password || !role)
     return res.send("All fields required");
 
-  db.query(
-    "INSERT INTO users (email,password,role) VALUES (?,?,?)",
-    [email, password, role],
-    (err) => {
-      if (err) return res.send("User already exists");
-      res.redirect("/login");
-    }
-  );
+  try {
+    await pool.query(
+      "INSERT INTO users (email,password,role) VALUES ($1,$2,$3)",
+      [email, password, role]
+    );
+    res.redirect("/login");
+  } catch (err) {
+    console.error(err);
+    res.send("User already exists");
+  }
 });
 
 
@@ -132,30 +134,32 @@ app.get("/login", (req, res) => {
   res.render("login", { error: req.query.error });
 });
 
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
-  db.query(
-    "SELECT * FROM users WHERE email=? AND password=?",
-    [email, password],
-    (err, result) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM users WHERE email=$1 AND password=$2",
+      [email, password]
+    );
 
-      if (err) return res.send("Database error");
+    if (result.rows.length === 0)
+      return res.redirect("/login?error=Invalid%20credentials");
 
-      if (!result || result.length === 0)
-        return res.redirect("/login?error=Invalid%20credentials");
+    req.session.user = result.rows[0];
 
-      req.session.user = result[0];
+    if (result.rows[0].role === "admin")
+      return res.redirect("/admin");
 
-      if (result[0].role === "admin")
-        return res.redirect("/admin");
+    if (result.rows[0].role === "provider")
+      return res.redirect("/provider-dashboard");
 
-      if (result[0].role === "provider")
-        return res.redirect("/provider-dashboard");
+    res.redirect("/services");
 
-      res.redirect("/services");
-    }
-  );
+  } catch (err) {
+    console.error(err);
+    res.send("Database error");
+  }
 });
 
 
@@ -171,42 +175,41 @@ app.get("/logout", (req, res) => {
 
 
 // ==========================
-// SERVICES (PUBLIC)
+// SERVICES
 // ==========================
 
-app.get("/services", (req, res) => {
+app.get("/services", async (req, res) => {
 
-  const search = req.query.search ? req.query.search.trim() : "";
-  const location = req.query.location ? req.query.location.trim() : "";
+  const search = req.query.search?.trim() || "";
+  const location = req.query.location?.trim() || "";
 
   let sql = "SELECT * FROM providers WHERE status='approved'";
   const params = [];
 
-  // Filter by service name
   if (search !== "") {
-    sql += " AND service LIKE ?";
     params.push(`%${search}%`);
+    sql += ` AND service ILIKE $${params.length}`;
   }
 
-  // Filter by location
   if (location !== "") {
-    sql += " AND location LIKE ?";
     params.push(`%${location}%`);
+    sql += ` AND location ILIKE $${params.length}`;
   }
 
-  db.query(sql, params, (err, results) => {
-    if (err) {
-      console.error(err);
-      return res.send("Database error");
-    }
+  try {
+    const result = await pool.query(sql, params);
 
     res.render("services", {
-      providers: results,
+      providers: result.rows,
       user: req.session.user,
       search,
       location
     });
-  });
+
+  } catch (err) {
+    console.error(err);
+    res.send("Database error");
+  }
 });
 
 
@@ -214,42 +217,48 @@ app.get("/services", (req, res) => {
 // PROVIDER DASHBOARD
 // ==========================
 
-app.get("/provider-dashboard", requireProvider, (req, res) => {
+app.get("/provider-dashboard", requireProvider, async (req, res) => {
 
-  db.query(
-    "SELECT * FROM providers WHERE owner_id=?",
-    [req.session.user.id],
-    (err, results) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM providers WHERE owner_id=$1",
+      [req.session.user.id]
+    );
 
-      if (err) return res.send("Error loading dashboard");
+    res.render("provider-dashboard", {
+      listings: result.rows,
+      user: req.session.user
+    });
 
-      res.render("provider-dashboard", {
-        listings: results,
-        user: req.session.user
-      });
-    }
-  );
+  } catch (err) {
+    console.error(err);
+    res.send("Error loading dashboard");
+  }
 });
 
 
-// Submit provider listing
-app.post("/submit-provider", requireProvider, (req, res) => {
+// Submit provider
+app.post("/submit-provider", requireProvider, async (req, res) => {
 
   const { name, service, location, phone, description } = req.body;
 
   if (!name || !service || !location || !phone)
     return res.send("All fields required");
 
-  db.query(
-    `INSERT INTO providers 
-     (name, service, location, phone, description, owner_id, status)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
-    [name, service, location, phone, description, req.session.user.id],
-    (err) => {
-      if (err) return res.send("Error submitting provider");
-      res.redirect("/provider-dashboard");
-    }
-  );
+  try {
+    await pool.query(
+      `INSERT INTO providers
+       (name, service, location, phone, description, owner_id, status)
+       VALUES ($1,$2,$3,$4,$5,$6,'pending')`,
+      [name, service, location, phone, description, req.session.user.id]
+    );
+
+    res.redirect("/provider-dashboard");
+
+  } catch (err) {
+    console.error(err);
+    res.send("Error submitting provider");
+  }
 });
 
 
@@ -257,48 +266,42 @@ app.post("/submit-provider", requireProvider, (req, res) => {
 // ADMIN PANEL
 // ==========================
 
-app.get("/admin", requireAdmin, (req, res) => {
+app.get("/admin", requireAdmin, async (req, res) => {
 
-  db.query(
-    "SELECT * FROM providers WHERE status='pending'",
-    (err, results) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM providers WHERE status='pending'"
+    );
 
-      if (err) return res.send("Error loading admin panel");
+    res.render("admin", {
+      providers: result.rows,
+      user: req.session.user
+    });
 
-      res.render("admin", {
-        providers: results,
-        user: req.session.user
-      });
-    }
-  );
+  } catch (err) {
+    console.error(err);
+    res.send("Error loading admin panel");
+  }
 });
 
 
-// Approve provider
-app.post("/approve/:id", requireAdmin, (req, res) => {
-
-  db.query(
-    "UPDATE providers SET status='approved' WHERE id=?",
-    [req.params.id],
-    (err) => {
-      if (err) return res.send("Approval failed");
-      res.redirect("/admin");
-    }
+// Approve
+app.post("/approve/:id", requireAdmin, async (req, res) => {
+  await pool.query(
+    "UPDATE providers SET status='approved' WHERE id=$1",
+    [req.params.id]
   );
+  res.redirect("/admin");
 });
 
 
-// Reject provider
-app.post("/reject/:id", requireAdmin, (req, res) => {
-
-  db.query(
-    "DELETE FROM providers WHERE id=?",
-    [req.params.id],
-    (err) => {
-      if (err) return res.send("Reject failed");
-      res.redirect("/admin");
-    }
+// Reject
+app.post("/reject/:id", requireAdmin, async (req, res) => {
+  await pool.query(
+    "DELETE FROM providers WHERE id=$1",
+    [req.params.id]
   );
+  res.redirect("/admin");
 });
 
 
@@ -306,6 +309,8 @@ app.post("/reject/:id", requireAdmin, (req, res) => {
 // START SERVER
 // ==========================
 
-app.listen(3000, () => {
-  console.log("Server running on http://localhost:3000");
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log("Server running on port " + PORT);
 });
